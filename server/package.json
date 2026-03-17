@@ -1,0 +1,28 @@
+{
+  "name": "conductor-companion-server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@conductor-companion/shared": "file:../shared",
+    "better-sqlite3": "^11.0.0",
+    "chokidar": "^4.0.0",
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.0.0",
+    "qrcode": "^1.5.0",
+    "toml": "^3.0.0",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.0.0",
+    "@types/ws": "^8.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
