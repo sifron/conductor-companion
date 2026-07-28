@@ -9,56 +9,72 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { colors, fonts, spacing } from '../theme';
 import { useConnectionStore } from '../store/connectionStore';
 import { bridgeClient } from '../api/client';
+import { getMe, CloudApiError } from '../providers/cloud/http';
 
+// Both halves are independently skippable — filling in either one flips
+// isConfigured and App.tsx swaps to the main navigator. There's no "next"
+// step to force through; the other half is always reachable later from
+// Settings.
 export function ConnectionSetup() {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('3847');
   const [token, setToken] = useState('');
-  const [testing, setTesting] = useState(false);
+  const [testingBridge, setTestingBridge] = useState(false);
 
-  const setConnection = useConnectionStore((s) => s.setConnection);
+  const [cloudKey, setCloudKey] = useState('');
+  const [validatingKey, setValidatingKey] = useState(false);
 
-  const handleConnect = async () => {
+  const setBridge = useConnectionStore((s) => s.setBridge);
+  const setCloud = useConnectionStore((s) => s.setCloud);
+
+  const handleConnectBridge = async () => {
     if (!host.trim() || !token.trim()) {
       Alert.alert('Error', 'Please enter both server address and auth token');
       return;
     }
 
-    setTesting(true);
-
-    // Temporarily set connection to test
-    await setConnection(host.trim(), parseInt(port, 10) || 3847, token.trim());
+    setTestingBridge(true);
+    await setBridge(host.trim(), parseInt(port, 10) || 3847, token.trim());
 
     const ok = await bridgeClient.testConnection();
-    if (ok) {
-      // Connection saved, navigation will handle the rest
-    } else {
-      Alert.alert(
-        'Connection Failed',
-        'Could not connect to the bridge server. Check the address and token.'
-      );
-      await useConnectionStore.getState().disconnect();
+    if (!ok) {
+      Alert.alert('Connection Failed', 'Could not connect to the bridge server. Check the address and token.');
+      await useConnectionStore.getState().clearBridge();
     }
+    setTestingBridge(false);
+  };
 
-    setTesting(false);
+  const handleSaveCloudKey = async () => {
+    const key = cloudKey.trim();
+    if (!key) return;
+    setValidatingKey(true);
+    try {
+      const identity = await getMe(key);
+      await setCloud(key, identity);
+    } catch (e) {
+      const detail =
+        e instanceof CloudApiError && (e.status === 401 || e.status === 403)
+          ? 'Key was rejected — check that it is valid and not revoked.'
+          : 'Could not validate the key. Check your connection and try again.';
+      Alert.alert('Invalid API Key', detail);
+    } finally {
+      setValidatingKey(false);
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.content}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Conductor Companion</Text>
-        <Text style={styles.subtitle}>
-          Connect to your bridge server to get started
-        </Text>
+        <Text style={styles.subtitle}>Connect to a bridge server, Conductor Cloud, or both</Text>
 
         <View style={styles.form}>
+          <Text style={styles.sectionTitle}>This Mac (Bridge)</Text>
           <Text style={styles.label}>Server Address</Text>
           <TextInput
             style={styles.input}
@@ -94,15 +110,11 @@ export function ConnectionSetup() {
           />
 
           <TouchableOpacity
-            style={[styles.button, testing && styles.buttonDisabled]}
-            onPress={handleConnect}
-            disabled={testing}
+            style={[styles.button, testingBridge && styles.buttonDisabled]}
+            onPress={handleConnectBridge}
+            disabled={testingBridge}
           >
-            {testing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Connect</Text>
-            )}
+            {testingBridge ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Connect Bridge</Text>}
           </TouchableOpacity>
 
           <Text style={styles.hint}>
@@ -110,7 +122,38 @@ export function ConnectionSetup() {
             http://localhost:3847/setup for connection details
           </Text>
         </View>
-      </View>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <View style={styles.form}>
+          <Text style={styles.sectionTitle}>Conductor Cloud</Text>
+          <Text style={styles.label}>Cloud API Key</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Paste your Cloud API key"
+            placeholderTextColor={colors.textMuted}
+            value={cloudKey}
+            onChangeText={setCloudKey}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+
+          <TouchableOpacity
+            style={[styles.button, (!cloudKey.trim() || validatingKey) && styles.buttonDisabled]}
+            onPress={handleSaveCloudKey}
+            disabled={!cloudKey.trim() || validatingKey}
+          >
+            {validatingKey ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Connect Cloud</Text>}
+          </TouchableOpacity>
+
+          <Text style={styles.hint}>Works with your Mac asleep — but no live streaming, ~5s status updates.</Text>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -121,9 +164,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
   title: {
     fontSize: fonts.sizes.title,
@@ -137,6 +181,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.xxl,
+  },
+  sectionTitle: {
+    fontSize: fonts.sizes.sm,
+    color: colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
   },
   form: {
     gap: spacing.sm,
@@ -177,5 +228,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.lg,
     lineHeight: 18,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.xxl,
+    gap: spacing.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    color: colors.textMuted,
+    fontSize: fonts.sizes.sm,
   },
 });

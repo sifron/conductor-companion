@@ -31,6 +31,16 @@ const screenOptions = {
   headerTitleStyle: { fontWeight: '600' as const },
 };
 
+// Params carry a discrete `source: SourceId` field alongside the id — never
+// a composite "cloud:138bb5a3…" string. refKey() is used only as a Record
+// key at the store boundary; one forgotten split(':') here would be a
+// silent cross-provider mixup.
+export type WorkspacesStackParamList = {
+  WorkspaceList: undefined;
+  SessionList: { source: 'bridge' | 'cloud'; workspaceId: string; workspaceName: string | null };
+  ChatView: { source: 'bridge' | 'cloud'; workspaceId: string; sessionId: string; sessionTitle: string | null };
+};
+
 function WorkspacesStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>

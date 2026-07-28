@@ -9,19 +9,34 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const content = message.display_content;
+  const content = message.text;
 
-  if (!content || content.trim() === '') return null;
+  if (message.kind === 'unknown') {
+    if (!__DEV__) return null;
+    return (
+      <View style={styles.assistantContainer}>
+        <View style={styles.unknownChip}>
+          <Text style={styles.unknownChipText}>
+            unrecognized message shape{message.raw ? ` — ${message.raw.slice(0, 60)}...` : ''}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (message.kind !== 'text' || !content || content.trim() === '') return null;
 
   if (isUser) {
     return (
       <View style={styles.userContainer}>
         <View style={styles.userBubble}>
           <Text style={styles.userText}>{content}</Text>
+          {message.pending === 'sending' && <Text style={styles.pendingText}>Sending...</Text>}
+          {message.pending === 'failed' && <Text style={styles.failedText}>Failed to send</Text>}
         </View>
-        {message.sent_at && (
+        {message.createdAt && (
           <Text style={[styles.timestamp, styles.userTimestamp]}>
-            {formatTime(message.sent_at)}
+            {formatTime(message.createdAt)}
           </Text>
         )}
       </View>
@@ -34,9 +49,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <View style={styles.assistantContainer}>
       {blocks.map((block, i) => renderBlock(block, i))}
-      {message.sent_at && (
+      {message.createdAt && (
         <Text style={[styles.timestamp, styles.assistantTimestamp]}>
-          {formatTime(message.sent_at)}
+          {formatTime(message.createdAt)}
         </Text>
       )}
     </View>
@@ -366,5 +381,31 @@ const styles = StyleSheet.create({
   },
   assistantTimestamp: {
     marginLeft: 0,
+  },
+
+  // Optimistic send / unknown-shape states
+  pendingText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: fonts.sizes.sm,
+    marginTop: 2,
+  },
+  failedText: {
+    color: colors.error,
+    fontSize: fonts.sizes.sm,
+    marginTop: 2,
+  },
+  unknownChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  unknownChipText: {
+    color: colors.textMuted,
+    fontSize: fonts.sizes.sm,
+    fontFamily: fonts.mono,
   },
 });

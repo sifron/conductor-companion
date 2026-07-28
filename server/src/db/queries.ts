@@ -45,6 +45,7 @@ export function listWorkspaces(): WorkspaceResponse[] {
       repo_remote_url: repo?.remote_url ?? null,
       active_session_status: activeSessionStatus,
       session_count: sessionCount,
+      origin: ws.sandbox_provider ? 'cloud' : 'desktop',
     };
   });
 }
@@ -85,6 +86,7 @@ export function getWorkspace(id: string): WorkspaceResponse | null {
     repo_remote_url: repo?.remote_url ?? null,
     active_session_status: activeSessionStatus,
     session_count: sessionCount,
+    origin: ws.sandbox_provider ? 'cloud' : 'desktop',
   };
 }
 
@@ -147,6 +149,7 @@ export interface SessionWithPath {
   claude_session_id: string | null;
   status: string | null;
   workspace_path: string | null;
+  sandbox_provider: string | null;
 }
 
 export function getSessionWithWorkspacePath(sessionId: string): SessionWithPath | null {
@@ -157,13 +160,17 @@ export function getSessionWithWorkspacePath(sessionId: string): SessionWithPath 
         s.id as session_id,
         s.claude_session_id,
         s.status,
-        CASE
-          WHEN r.root_path IS NOT NULL AND w.directory_name IS NOT NULL
-          THEN REPLACE(r.root_path, '/repos/', '/workspaces/') || '/' || w.directory_name
-          WHEN r.root_path IS NOT NULL
-          THEN r.root_path
-          ELSE NULL
-        END as workspace_path
+        COALESCE(
+          w.workspace_path,
+          CASE
+            WHEN r.root_path IS NOT NULL AND w.directory_name IS NOT NULL
+            THEN REPLACE(r.root_path, '/repos/', '/workspaces/') || '/' || w.directory_name
+            WHEN r.root_path IS NOT NULL
+            THEN r.root_path
+            ELSE NULL
+          END
+        ) as workspace_path,
+        w.sandbox_provider
       FROM sessions s
       LEFT JOIN workspaces w ON s.workspace_id = w.id
       LEFT JOIN repos r ON w.repository_id = r.id

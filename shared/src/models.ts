@@ -23,6 +23,10 @@ export interface Workspace {
   created_at: string | null;
   updated_at: string | null;
   pinned_at: string | null;
+  workspace_path: string | null;
+  sandbox_provider: string | null;
+  hosting_server_url: string | null;
+  workspace_name: string | null;
 }
 
 export interface WorkspaceResponse extends Workspace {
@@ -30,6 +34,7 @@ export interface WorkspaceResponse extends Workspace {
   repo_remote_url: string | null;
   active_session_status: string | null;
   session_count: number;
+  origin?: 'desktop' | 'cloud';
 }
 
 export interface Session {

@@ -12,15 +12,15 @@ import type {
 
 class BridgeClient {
   private getBaseUrl(): string {
-    const { host, port } = useConnectionStore.getState();
-    return `http://${host}:${port}`;
+    const { bridge } = useConnectionStore.getState();
+    return `http://${bridge?.host}:${bridge?.port}`;
   }
 
   private getHeaders(): Record<string, string> {
-    const { token } = useConnectionStore.getState();
+    const { bridge } = useConnectionStore.getState();
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${bridge?.token ?? ''}`,
     };
   }
 
@@ -84,7 +84,11 @@ class BridgeClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ content } satisfies SendMessageRequest),
     });
-    return response.json();
+    const body = (await response.json().catch(() => null)) as SendMessageResponse | null;
+    if (!response.ok) {
+      return { status: 'error', error: body?.error || `HTTP ${response.status}` };
+    }
+    return body ?? { status: 'error', error: 'Empty response' };
   }
 }
 

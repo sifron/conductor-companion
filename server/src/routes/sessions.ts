@@ -50,6 +50,13 @@ export function sessionRoutes() {
       return c.json<SendMessageResponse>({ status: 'error', error: 'Session has no Claude session ID' }, 400);
     }
 
+    if (sessionInfo.sandbox_provider) {
+      return c.json<SendMessageResponse>(
+        { status: 'error', error: 'Cloud workspace — the bridge cannot send here' },
+        501
+      );
+    }
+
     if (!sessionInfo.workspace_path) {
       return c.json<SendMessageResponse>({ status: 'error', error: 'Could not determine workspace path' }, 400);
     }

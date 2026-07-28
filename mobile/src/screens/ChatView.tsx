@@ -12,8 +12,10 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { refKey } from '../providers/types';
 import { colors, fonts, spacing } from '../theme';
 import { useDataStore, Message } from '../store/dataStore';
+import { useScopeStore } from '../store/scopeStore';
 import { MessageBubble } from '../components/MessageBubble';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -22,20 +24,21 @@ const EMPTY_MESSAGES: Message[] = [];
 export function ChatView() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { sessionId, sessionTitle } = route.params;
+  const { source, workspaceId, sessionId, sessionTitle } = route.params;
+  const workspaceRef = useMemo(() => ({ source, id: workspaceId }), [source, workspaceId]);
+  const sessionRef = useMemo(() => ({ source, id: sessionId }), [source, sessionId]);
 
   const messagesMap = useDataStore((s) => s.messages);
-  const messages = messagesMap[sessionId] || EMPTY_MESSAGES;
+  const messages = messagesMap[refKey(sessionRef)] || EMPTY_MESSAGES;
   const sessionsMap = useDataStore((s) => s.sessions);
-  const session = useMemo(() => {
-    for (const list of Object.values(sessionsMap)) {
-      const found = list.find((s) => s.id === sessionId);
-      if (found) return found;
-    }
-    return null;
-  }, [sessionsMap, sessionId]);
+  const session = useMemo(
+    () => (sessionsMap[refKey(workspaceRef)] || []).find((s) => s.ref.id === sessionId) ?? null,
+    [sessionsMap, workspaceRef, sessionId]
+  );
   const fetchMessages = useDataStore((s) => s.fetchMessages);
   const sendMessage = useDataStore((s) => s.sendMessage);
+  const setActiveSession = useScopeStore((s) => s.setActiveSession);
+  const clearActiveSession = useScopeStore((s) => s.clearActiveSession);
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -46,37 +49,27 @@ export function ChatView() {
 
   useEffect(() => {
     navigation.setOptions({ title: sessionTitle || 'Chat' });
-    fetchMessages(sessionId).then((more) => {
+    setActiveSession(workspaceRef, sessionRef);
+    fetchMessages(sessionRef).then((more) => {
       setHasMore(more);
       setInitialLoad(false);
     });
-  }, [sessionId]);
+    return () => clearActiveSession();
+  }, [source, workspaceId, sessionId]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore || messages.length === 0) return;
     setLoadingMore(true);
     const oldestMessage = messages[0];
-    const more = await fetchMessages(sessionId, oldestMessage?.id);
+    const more = await fetchMessages(sessionRef, oldestMessage?.ref.id);
     setHasMore(more);
     setLoadingMore(false);
-  }, [hasMore, loadingMore, messages, sessionId]);
+  }, [hasMore, loadingMore, messages, sessionRef]);
 
-  // Filter to only show meaningful user/assistant text messages
-  const visibleMessages = messages.filter((m) => {
-    if (m.role !== 'user' && m.role !== 'assistant') return false;
-    const c = m.display_content;
-    if (!c || c.trim() === '') return false;
-    // Skip tool use/result messages
-    if (c.startsWith('[Tool:')) return false;
-    // Skip raw JSON (tool results that weren't parsed)
-    if (c.startsWith('{"type":"result"') || c.startsWith('[{"tool_use_id"')) return false;
-    if (c.startsWith('{') && c.length < 300) {
-      try { JSON.parse(c); return false; } catch {}
-    }
-    return true;
-  });
+  const visibleMessages = messages.filter((m) => (m.kind === 'text' && m.text.trim()) || m.kind === 'unknown');
 
   const isWorking = session?.status === 'working';
+  const canSend = session?.capabilities.canSendMessage ?? true;
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -84,14 +77,14 @@ export function ChatView() {
 
     setSending(true);
     setInputText('');
-    const result = await sendMessage(sessionId, text);
+    const result = await sendMessage(sessionRef, text);
     setSending(false);
 
     if (!result.success) {
       Alert.alert('Send Failed', result.error || 'Could not send message');
       setInputText(text); // Restore text on failure
     }
-  }, [inputText, sending, sessionId, sendMessage]);
+  }, [inputText, sending, sessionRef, sendMessage]);
 
   const renderItem = ({ item }: { item: Message }) => (
     <MessageBubble message={item} />
@@ -117,17 +110,20 @@ export function ChatView() {
           {session.model && (
             <Text style={styles.modelText}>{session.model}</Text>
           )}
-          {session.context_used_percent != null && (
+          {session.contextUsedPercent != null && (
             <Text style={styles.contextText}>
-              {Math.round(session.context_used_percent)}% context
+              {Math.round(session.contextUsedPercent)}% context
             </Text>
+          )}
+          {!session.capabilities.streams && (
+            <Text style={styles.contextText}>· no live streaming</Text>
           )}
         </View>
       )}
       <FlatList
         ref={flatListRef}
         data={visibleMessages}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => refKey(item.ref)}
         renderItem={renderItem}
         contentContainerStyle={styles.messageList}
         inverted={false}
@@ -158,19 +154,21 @@ export function ChatView() {
             style={styles.textInput}
             value={inputText}
             onChangeText={setInputText}
-            placeholder={isWorking ? 'Session is busy...' : 'Send a message...'}
+            placeholder={
+              !canSend ? "Sending isn't supported here" : isWorking ? 'Session is busy...' : 'Send a message...'
+            }
             placeholderTextColor={colors.textMuted}
             multiline
             maxLength={10000}
-            editable={!isWorking && !sending}
+            editable={canSend && !isWorking && !sending}
           />
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!inputText.trim() || sending || isWorking) && styles.sendButtonDisabled,
+              (!inputText.trim() || sending || isWorking || !canSend) && styles.sendButtonDisabled,
             ]}
             onPress={handleSend}
-            disabled={!inputText.trim() || sending || isWorking}
+            disabled={!inputText.trim() || sending || isWorking || !canSend}
           >
             {sending ? (
               <ActivityIndicator size="small" color="#fff" />

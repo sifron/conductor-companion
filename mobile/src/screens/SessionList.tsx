@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { refKey } from '../providers/types';
 import { colors, fonts, spacing } from '../theme';
 import { useDataStore, Session } from '../store/dataStore';
 import { StatusBadge } from '../components/StatusBadge';
@@ -16,23 +17,26 @@ const EMPTY_SESSIONS: Session[] = [];
 export function SessionList() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { workspaceId, workspaceName } = route.params;
+  const { source, workspaceId, workspaceName } = route.params;
+  const workspaceRef = { source, id: workspaceId };
 
   const sessionsMap = useDataStore((s) => s.sessions);
-  const sessions = sessionsMap[workspaceId] || EMPTY_SESSIONS;
+  const sessions = sessionsMap[refKey(workspaceRef)] || EMPTY_SESSIONS;
   const fetchSessions = useDataStore((s) => s.fetchSessions);
 
   useEffect(() => {
     navigation.setOptions({ title: workspaceName || 'Sessions' });
-    fetchSessions(workspaceId);
-  }, [workspaceId]);
+    fetchSessions(workspaceRef);
+  }, [source, workspaceId]);
 
   const renderItem = ({ item }: { item: Session }) => (
     <TouchableOpacity
       style={styles.card}
       onPress={() =>
         navigation.navigate('ChatView', {
-          sessionId: item.id,
+          source,
+          workspaceId,
+          sessionId: item.ref.id,
           sessionTitle: item.title || 'Chat',
         })
       }
@@ -47,21 +51,21 @@ export function SessionList() {
 
       <View style={styles.meta}>
         <Text style={styles.model}>{item.model || 'unknown'}</Text>
-        {item.permission_mode === 'plan' && (
+        {item.planMode && (
           <View style={styles.planBadge}>
             <Text style={styles.planBadgeText}>Plan Mode</Text>
           </View>
         )}
-        {item.context_used_percent != null && (
+        {item.contextUsedPercent != null && (
           <Text style={styles.context}>
-            {Math.round(item.context_used_percent)}% context
+            {Math.round(item.contextUsedPercent)}% context
           </Text>
         )}
       </View>
 
-      {item.last_user_message_at && (
+      {item.lastActivityAt && (
         <Text style={styles.time}>
-          Last activity: {formatRelativeTime(item.last_user_message_at)}
+          Last activity: {formatRelativeTime(item.lastActivityAt)}
         </Text>
       )}
     </TouchableOpacity>
@@ -71,7 +75,7 @@ export function SessionList() {
     <View style={styles.container}>
       <FlatList
         data={sessions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.ref.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

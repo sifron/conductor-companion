@@ -13,6 +13,10 @@ const statusConfig: Record<string, { color: string; label: string; pulse: boolea
   error: { color: colors.error, label: 'Error', pulse: false },
   'in-progress': { color: colors.accent, label: 'In Progress', pulse: true },
   ready: { color: colors.success, label: 'Ready', pulse: false },
+  initializing: { color: colors.accent, label: 'Initializing', pulse: true },
+  sleeping: { color: colors.textMuted, label: 'Sleeping', pulse: false },
+  archived: { color: colors.textMuted, label: 'Archived', pulse: false },
+  unknown: { color: colors.textMuted, label: 'Unknown', pulse: false },
 };
 
 export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {

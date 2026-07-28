@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,27 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { colors, fonts, spacing } from '../theme';
 import { useDataStore, Workspace } from '../store/dataStore';
-import { useConnectionStore } from '../store/connectionStore';
 import { StatusBadge } from '../components/StatusBadge';
+
+const SOURCE_LABEL = { bridge: 'This Mac', cloud: 'Cloud' } as const;
 
 export function WorkspaceList() {
   const navigation = useNavigation<any>();
-  const workspaces = useDataStore((s) => s.workspaces);
+  const workspacesMap = useDataStore((s) => s.workspaces);
   const isLoading = useDataStore((s) => s.isLoading);
   const lastUpdated = useDataStore((s) => s.lastUpdated);
   const fetchWorkspaces = useDataStore((s) => s.fetchWorkspaces);
-  const isConnected = useConnectionStore((s) => s.isConnected);
+  const health = useDataStore((s) => s.health);
+
+  const workspaces = useMemo(
+    () =>
+      Object.values(workspacesMap).sort((a, b) => {
+        const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+        const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+        return bt - at;
+      }),
+    [workspacesMap]
+  );
 
   useEffect(() => {
     fetchWorkspaces();
@@ -34,31 +45,33 @@ export function WorkspaceList() {
       style={styles.card}
       onPress={() =>
         navigation.navigate('SessionList', {
-          workspaceId: item.id,
-          workspaceName: item.directory_name,
+          source: item.ref.source,
+          workspaceId: item.ref.id,
+          workspaceName: item.name,
         })
       }
       activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.workspaceName}>{item.directory_name}</Text>
-        <StatusBadge status={item.active_session_status || item.derived_status} size="sm" />
+        <Text style={styles.workspaceName}>{item.name}</Text>
+        <StatusBadge status={item.status} size="sm" />
       </View>
 
-      {item.repo_name && (
-        <Text style={styles.repoName}>{item.repo_name}</Text>
-      )}
+      <View style={styles.cardMeta}>
+        <Text style={styles.sourceChip}>{SOURCE_LABEL[item.ref.source]}</Text>
+        {item.repoName && <Text style={styles.repoName}>{item.repoName}</Text>}
+      </View>
 
       <View style={styles.cardMeta}>
-        <Text style={styles.branch}>{item.branch}</Text>
+        {item.branch && <Text style={styles.branch}>{item.branch}</Text>}
         <Text style={styles.sessionCount}>
-          {item.session_count} session{item.session_count !== 1 ? 's' : ''}
+          {item.sessionCount == null ? '—' : `${item.sessionCount} session${item.sessionCount !== 1 ? 's' : ''}`}
         </Text>
       </View>
 
-      {item.pr_title && (
+      {item.prTitle && (
         <Text style={styles.prTitle} numberOfLines={1}>
-          PR: {item.pr_title}
+          PR: {item.prTitle}
         </Text>
       )}
     </TouchableOpacity>
@@ -66,16 +79,21 @@ export function WorkspaceList() {
 
   return (
     <View style={styles.container}>
-      {!isConnected && (
-        <View style={styles.disconnectedBanner}>
-          <Text style={styles.disconnectedText}>
-            Disconnected{lastUpdated ? ` \u00b7 Last updated ${formatRelativeTime(lastUpdated)}` : ''}
-          </Text>
-        </View>
-      )}
+      {(['bridge', 'cloud'] as const).map((source) => {
+        const h = health[source];
+        if (!h || h.reachable) return null;
+        return (
+          <View key={source} style={[styles.disconnectedBanner, h.fatal && styles.fatalBanner]}>
+            <Text style={styles.disconnectedText}>
+              {SOURCE_LABEL[source]}: {h.detail || 'Unreachable'}
+              {lastUpdated ? ` · Last updated ${formatRelativeTime(lastUpdated)}` : ''}
+            </Text>
+          </View>
+        );
+      })}
       <FlatList
         data={workspaces}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => `${item.ref.source}:${item.ref.id}`}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         refreshControl={
@@ -90,7 +108,7 @@ export function WorkspaceList() {
             <View style={styles.empty}>
               <Text style={styles.emptyText}>No workspaces found</Text>
               <Text style={styles.emptyHint}>
-                Make sure Conductor is running with active workspaces
+                Connect to a bridge server or Conductor Cloud in Settings
               </Text>
             </View>
           ) : null
@@ -122,6 +140,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.warning + '40',
   },
+  fatalBanner: {
+    backgroundColor: colors.error + '20',
+    borderBottomColor: colors.error + '40',
+  },
   disconnectedText: {
     color: colors.warning,
     fontSize: fonts.sizes.sm,
@@ -149,10 +171,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     flex: 1,
   },
+  sourceChip: {
+    fontSize: fonts.sizes.sm,
+    color: colors.accent,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   repoName: {
     fontSize: fonts.sizes.sm,
     color: colors.textSecondary,
-    marginTop: 2,
   },
   cardMeta: {
     flexDirection: 'row',
